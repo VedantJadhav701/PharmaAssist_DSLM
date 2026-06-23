@@ -1,0 +1,29 @@
+# OpenFDA massive dataset zips
+*.zip
+
+# Qdrant local database directory
+qdrant_db/
+test_qdrant_temp/
+
+# Environment configurations and API keys
+.env
+.env*
+!.env.example
+
+# Python cache and environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.conda/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Evaluation logs and temp files
+evaluation/*.csv
+evaluation_logs.csv
