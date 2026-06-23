@@ -161,3 +161,65 @@ We implement a **programmatic validator** that parses the LLM's final response:
    ```bash
    streamlit run frontend/streamlit_app.py
    ```
+
+---
+
+## 6. Repository Folder & File Dependency Map
+
+Below is a detailed breakdown of what each script does and how they are wired together across the project directories:
+
+### 📁 `ingestion/` (Data Processing & Loading)
+* **[cleaner.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/cleaner.py)**: Helper utilities for HTML sanitization and string cleaning.
+  * *Called by:* [openfda_loader.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/openfda_loader.py).
+* **[who_loader.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/who_loader.py)**: Loads and parses the WHO Essential Medicines spreadsheet `eml_export.xlsx`, mapping generic names, therapeutic categories, and drug synonyms.
+  * *Called by:* [openfda_loader.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/openfda_loader.py) (metadata lookup during indexing) and [alternative_agent.py](file:///C:/Users/HP/projects/DSLM_Medical/agents/alternative_agent.py) (therapeutic alternative suggestions).
+* **[openfda_loader.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/openfda_loader.py)**: Streams JSON records directly from raw ZIP files using low-memory parsing. Matches names with the EML list.
+  * *Called by:* [pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/pipeline.py).
+* **[pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/pipeline.py)**: Coordinates ingestion: streams drugs, runs chunking, generates embeddings, and writes vectors to Qdrant.
+  * *Uses:* `openfda_loader.py`, `who_loader.py`, `splitter.py`, `embedder.py`, `qdrant_manager.py`.
+
+### 📁 `chunking/` (Text Splitting)
+* **[splitter.py](file:///C:/Users/HP/projects/DSLM_Medical/chunking/splitter.py)**: Implements recursive split patterns tailored for long medical fields (warnings, adverse reactions) to preserve clinical context.
+  * *Called by:* [pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/pipeline.py) during indexing.
+
+### 📁 `embeddings/` (Vector Generation)
+* **[embedder.py](file:///C:/Users/HP/projects/DSLM_Medical/embeddings/embedder.py)**: Manages local loading and pooling of `bge-small-en-v1.5` on the CPU.
+  * *Called by:* [pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/pipeline.py) (for document vectors) and [retriever.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/retriever.py) (for encoding search queries).
+
+### 📁 `vectorstore/` (Database Connection)
+* **[qdrant_manager.py](file:///C:/Users/HP/projects/DSLM_Medical/vectorstore/qdrant_manager.py)**: Manages the Qdrant Cloud connection, schema indexing, and batch upserts with retry handlers.
+  * *Called by:* [pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/ingestion/pipeline.py) and [retriever.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/retriever.py).
+
+### 📁 `retrieval/` (RAG Retrieval & Verification)
+* **[retriever.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/retriever.py)**: Combines dense vector query searches with scroll exact name searches (using synonym expansion).
+  * *Called by:* [rag_pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/rag_pipeline.py).
+* **[reranker.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/reranker.py)**: Loads cross-encoder `bge-reranker-base` on CPU to score document relevancy.
+  * *Called by:* [rag_pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/rag_pipeline.py).
+* **[citation_validator.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/citation_validator.py)**: Matches response citation tags (`[Doc X]`) against original source texts.
+  * *Called by:* [rag_pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/rag_pipeline.py).
+* **[rag_pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/rag_pipeline.py)**: Orchestrates retrieval, reranking, name-alignment guardrails, LLM calls, and citation checks.
+  * *Called by:* Worker agents inside `agents/`.
+
+### 📁 `llm/` (Inference Client)
+* **[qwen_client.py](file:///C:/Users/HP/projects/DSLM_Medical/llm/qwen_client.py)**: Interfaces with local Ollama (`qwen2.5:1.5b-instruct-q4_K_M`) on the GPU.
+  * *Called by:* [rag_pipeline.py](file:///C:/Users/HP/projects/DSLM_Medical/retrieval/rag_pipeline.py) and [supervisor_agent.py](file:///C:/Users/HP/projects/DSLM_Medical/agents/supervisor_agent.py).
+
+### 📁 `agents/` (Multi-Agent Routing)
+* **[drug_agent.py](file:///C:/Users/HP/projects/DSLM_Medical/agents/drug_agent.py)**: Drug Info Worker. Handles clinical and general QA.
+  * *Called by:* [supervisor_agent.py](file:///C:/Users/HP/projects/DSLM_Medical/agents/supervisor_agent.py).
+* **[interaction_agent.py](file:///C:/Users/HP/projects/DSLM_Medical/agents/interaction_agent.py)**: Interaction Worker. Checks warnings, contraindications, and synonyms for multiple drugs.
+  * *Called by:* [supervisor_agent.py](file:///C:/Users/HP/projects/DSLM_Medical/agents/supervisor_agent.py).
+* **[alternative_agent.py](file:///C:/Users/HP/projects/DSLM_Medical/agents/alternative_agent.py)**: Alternative Medicine Worker. Suggests WHO categories and alternative profiles.
+  * *Called by:* [supervisor_agent.py](file:///C:/Users/HP/projects/DSLM_Medical/agents/supervisor_agent.py).
+* **[supervisor_agent.py](file:///C:/Users/HP/projects/DSLM_Medical/agents/supervisor_agent.py)**: Orchestrator. Coordinates the LangGraph StateGraph, routes queries, handles conversational greetings, and validates formatting.
+  * *Called by:* [main.py](file:///C:/Users/HP/projects/DSLM_Medical/api/main.py) (FastAPI endpoint) and [streamlit_app.py](file:///C:/Users/HP/projects/DSLM_Medical/frontend/streamlit_app.py) (Streamlit dashboard).
+
+### 📁 `api/` (API Server)
+* **[main.py](file:///C:/Users/HP/projects/DSLM_Medical/api/main.py)**: Hosts the FastAPI server and endpoints (`/api/chat`, `/api/interactions`, `/api/drug`, `/api/health`). Instantiates the `SupervisorAgent`.
+
+### 📁 `frontend/` (Dashboard UI)
+* **[streamlit_app.py](file:///C:/Users/HP/projects/DSLM_Medical/frontend/streamlit_app.py)**: Streamlit frontend. Communicates with FastAPI endpoints (or runs local fallback imports of `SupervisorAgent` if backend is offline).
+
+### 📁 `evaluation/` (Testing & Performance Logs)
+* **[ragas_eval.py](file:///C:/Users/HP/projects/DSLM_Medical/evaluation/ragas_eval.py)**: Validation test suite that executes benchmark query runs on the `SupervisorAgent` and logs latencies and citation accuracy metrics to `evaluation/evaluation_logs.csv`.
+
